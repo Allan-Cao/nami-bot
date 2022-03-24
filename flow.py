@@ -2,24 +2,27 @@ import discord
 from discord.ext import commands
 from discord.utils import get
 
-from ebb import productionToken, sussy_kittens
+from ebb import productionToken, sussy_kittens, testToken
 
-from tinydb import TinyDB, Query
-
-old_kittens = TinyDB('db.json')
-kittens = TinyDB('kitten.json')
-open_kittens = TinyDB('open.json')
-
-#old_kittens.truncate()
-#kittens.truncate()
-#open_kittens.truncate()
+import sqlite3
+connection = sqlite3.connect("kittens.db", isolation_level=None)
+cursor = connection.cursor()
 
 intents = discord.Intents.default()
 intents.members = True
 bot = discord.Client(intents = intents)
 bot = commands.Bot(command_prefix="!", intents=intents)
-starting_number = 1
+##################### UTILITY COMMANDS #############################
 
+def next_kitten_number():
+    rows = cursor.execute("SELECT kitten_number FROM kitten").fetchall()
+    all_kitten_numbers = [i[0] for i in rows]
+    max_kitten_numbers = list(range(min(all_kitten_numbers),max(all_kitten_numbers)+2))
+    return min(list(set(max_kitten_numbers) - set(all_kitten_numbers)))
+    # surely it isn't that computationally expensive
+    # surely there is a better way to do this :3
+
+##################### DISCORD COMMANDS #############################
 @bot.event
 async def on_ready():
     print("We have logged in as {0.user}".format(bot))
@@ -27,48 +30,48 @@ async def on_ready():
         status=discord.Status.online,
         activity=discord.Game("I still hear the song of the sea."),
 )
-#import string
-#letters = string.ascii_lowercase
 
 @bot.event
 async def on_message(message):
     await bot.process_commands(message)
 
-##################### KITTEN COMMANDS #############################
-
 @bot.event
 async def on_member_join(member):
-    if len(open_kittens.all()) == 0:
-        n = len(kittens.all()) + starting_number
-        try:
-            await member.edit(nick="Kitten #" + str(n))
-            print(f"{member.name} was renamed Kitten #{n}")
-            kittens.insert({'id': member.id, 'name': member.name, 'number': n})
-            n +=1
-        except:
-            print(f"{member.name} was unable to be renamed!")
-    else:
-        new_kitten = open_kittens.all()[0]
-        cat = Query()
-        try:
-            await member.edit(nick="Kitten #" + str(new_kitten['number']))
-            print(f"New kitten with id {member.id} will be assigned kitten #{new_kitten['number']}")
-            kittens.insert({'id': member.id, 'name': member.name, 'number': new_kitten['number']})
-            print(f"[Debug] {open_kittens.all()}")
-            open_kittens.remove(cat.id == new_kitten['id'])
-            print(f"[Debug] {open_kittens.all()}")
-        except:
-            print(f"{member.name} was unable to be renamed!")
+    """
+        On member join, first check if the member id is already in the database
+        If it is,
+            Give them back their kitten number
+        Otherwise,
+            Use the next_kitten_number() to find the next available kitten number
+    """
+    try:
+        kitten = cursor.execute("SELECT name, id, kitten_number FROM kitten WHERE id == ?",
+                                (member.id,)).fetchone()
+        if kitten == None:
+            kitten_name = member.name
+            kitten_id = member.id
+            kitten_number = next_kitten_number()
+            await member.edit(nick="Kitten #" + str(kitten_number))
+            cursor.execute("INSERT INTO kitten VALUES (?, ?, ?)",
+                        (kitten_name, kitten_id, kitten_number)
+            )
+            print(f"{member.name} was renamed Kitten #{kitten_number}")
+        else:
+            kitten_number = kitten[2]
+            await member.edit(nick="Kitten #" + str(kitten_number))
+            print(f"{member.name} was renamed Kitten #{kitten_number}")
+    except:
+        print(f"{member.name} was unable to be renamed!")
 
 
 @bot.event
 async def on_member_remove(member):
-    cat = Query()
-    n = kittens.search(cat.id == member.id)[0]['number']
-    print(f"{member.name} has left the server! They were kitten #{n}")
-    cat = Query()
-    kittens.remove(cat.id == member.id)
-    open_kittens.insert({'id': member.id, 'name': member.name, 'number': n})
+    """
+        Since we have an algorithm to deal with newly assigned numbers, why not just keep the number people had :3
+    """
+    n = cursor.execute("SELECT name, id, kitten_number FROM kitten WHERE id == ?",
+                        (member.id,)).fetchone()
+    print(f"{member.name} has left the server! They were kitten #{n} and was last named {member.nick}")
 """
 @bot.event
 async def on_member_update(before, after):
@@ -76,47 +79,75 @@ async def on_member_update(before, after):
         print("update before: " + before.name)
         print("update after: " + after.name)
 """
+@bot.command(
+    name="createDB",
+    brief="Creates new database",
+    pass_context=True,
+)
+async def createDB(ctx):
+    if ctx.author.id == 645940845245104130:
+        try:
+            cursor.execute("CREATE TABLE kitten (name TEXT, id INTEGER, kitten_number INTEGER)")
+            cursor.execute("INSERT INTO kitten VALUES (?, ?, ?)",
+                                    ("TauPiPhi", 645940845245104130, 0)
+                        )
+            cursor.execute("INSERT INTO kitten VALUES (?, ?, ?)",
+                                    ("Jopee", 218843524748148736, 1)
+                        )
+            cursor.execute("INSERT INTO kitten VALUES (?, ?, ?)",
+                                    ("Milk Loaf", 243537427162071040, 2)
+                        )
+        except:
+            await ctx.send("Database has already been created bozo...")
+    else:
+        await ctx.send("meow :3")
 
 @bot.command(
     name="kitten",
     brief="Meow!",
     pass_context=True,
 )
+
+#crewmate_kittens = [i for i in crewmate_kittens if i.id not in sussy_kittens.keys()] # remove sussy kittens
+#        for sus_kitten_id in sussy_kittens.keys():
+#
 async def kitten(ctx):
     if ctx.author.id == 645940845245104130:
-        sussy_kitten_n_values = []
-        crewmate_kittens = ctx.message.guild.members
-        crewmate_kittens = [i for i in crewmate_kittens if i.id not in sussy_kittens.keys()] # remove sussy kittens
-        for sus_kitten_id in sussy_kittens.keys():
-            try:
-                n = sussy_kittens[sus_kitten_id]
-                sus_kitten = ctx.message.guild.get_member(sus_kitten_id)
-                await sus_kitten.edit(nick="Kitten #" + str(n))
-                print(f"{sus_kitten.name} was renamed Kitten #{n}")
-                kittens.insert({'id': sus_kitten.id, 'name': sus_kitten.name, 'number': n})
-                sussy_kitten_n_values.append(n)
-            except:
-                print(f"{kitten.name} could not be renamed!")
-        n = starting_number
-        for member in crewmate_kittens:
-            while n in sussy_kitten_n_values:
-                n+=1
-            cat = Query()
-            if(len(kittens.search(cat.id == member.id)) == 0):
+        for sus_kitten in ctx.message.guild.members:
+            if sus_kitten.id in sussy_kittens.keys():
                 try:
-                    await member.edit(nick="Kitten #" + str(n))
-                    print(f"{member.name} was renamed Kitten #{n}")
-                    kittens.insert({'id': member.id, 'name': member.name, 'number': n})
-                    n +=1
+                    print(sus_kitten)
+                    kitten_name = sus_kitten.name
+                    kitten_id = sus_kitten.id
+                    kitten_number = sussy_kittens[sus_kitten.id]
+                    await sus_kitten.edit(nick="Kitten #" + str(kitten_number))
+                    print(f"By coincidence, {sus_kitten.name} was renamed Kitten #{kitten_number}")
+                    kitten = cursor.execute("SELECT name, id, kitten_number FROM kitten WHERE id == ?",
+                                            (sus_kitten.id,)).fetchone()
+                    if kitten == None:
+                        cursor.execute("INSERT INTO kitten VALUES (?, ?, ?)",
+                                    (kitten_name, kitten_id, kitten_number)
+                        )
                 except:
-                    print(f"{member.name} was unable to be renamed!")
+                    print(f"{kitten_name} could not be renamed!")
             else:
-                if (member.nick == ("Kitten #" + str(kittens.search(cat.id == member.id)[0]['number']))):
-                    print(f"{member.name} is already a kitten!")
-                else:
-                    await member.edit(nick="Kitten #" + str(kittens.search(cat.id == member.id)[0]['number']))
-                    print(f"{member.name} was renamed Kitten #{str(kittens.search(cat.id == member.id)[0]['number'])}")
-                
+                try:
+                    current_kitten = cursor.execute("SELECT name, id, kitten_number FROM kitten WHERE id == ?",
+                                            (sus_kitten.id,)).fetchone()
+                    if current_kitten == None:
+                        kitten_name = sus_kitten.name
+                        kitten_id = sus_kitten.id
+                        kitten_number = next_kitten_number()
+                        await sus_kitten.edit(nick="Kitten #" + str(kitten_number))
+                        cursor.execute("INSERT INTO kitten VALUES (?, ?, ?)",
+                                    (kitten_name, kitten_id, kitten_number)
+                        )
+                        print(f"{sus_kitten.name} was renamed Kitten #{kitten_number}")
+                    else:
+                        kitten_number = current_kitten[2]
+                        await sus_kitten.edit(nick="Kitten #" + str(kitten_number))
+                except:
+                    print(f"{sus_kitten.name} was unable to be renamed!") 
     else:
         await ctx.send("FAKE KITTEN DETECTED MEOW!")
 
@@ -133,21 +164,8 @@ async def unkitten(ctx):
             except:
                 print(f"{member.name} could not be unkittened!")
     else:
-        await ctx.send("FAKE KITTY RAWRRRRRR!")
+        await ctx.send("nyaaaaa :3")
 
 ###################### END KITTEN COMMANDS #############################
 
-"""
-@bot.command(
-    name="reset",
-    pass_context=True,
-)
-async def reset(ctx):
-    for member in ctx.message.guild.members:
-            try:
-                # print(member.display_name)
-                await member.edit(nick=''.join(random.choice(letters) for i in range(10)))
-            except:
-                continue
-"""
-bot.run(productionToken)
+bot.run(testToken)
