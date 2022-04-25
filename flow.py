@@ -2,14 +2,13 @@ import discord
 from discord.ext import commands
 from ebb import discordToken, commandPrefix, rename_error, custom_names, admin, activity_name, admin_error, db_error, keep_number_on_leave
 import sqlite3
-connection = sqlite3.connect("userbase.db", isolation_level=None)
-cursor = connection.cursor()
 
 intents = discord.Intents.default()
 intents.members = True
 bot = discord.Client(intents = intents)
 bot = commands.Bot(command_prefix=commandPrefix, intents=intents)
-
+connection = sqlite3.connect("userbase.db", isolation_level=None)
+cursor = connection.cursor()
 is_debug = False
 
 ##################### UTILITY COMMANDS #############################
@@ -19,14 +18,13 @@ def generate_name(n):
 
 def get_next_number():
     rows = cursor.execute("SELECT kitten_number FROM userbase").fetchall()
-    all_kitten_numbers = [i[0] for i in rows] + list(sussy_kittens.values())
+    all_kitten_numbers = [i[0] for i in rows] + list(custom_names.values())
     distinct = {*all_kitten_numbers}
     index = 1
     while True:
         if index not in distinct:
             return index
         index += 1
-    # btw this is a leetcode hard question lol
     # https://leetcode.com/problems/first-missing-positive/
 
 def select_user(id):
@@ -169,7 +167,6 @@ async def list(ctx):
 async def remove(ctx, arg):
     if ctx.author.id in admin:
         try:
-            # should validate the argument first...
             user = select_user(arg,)
             if user == None:
                 await ctx.send("Invalid userId given")
@@ -182,7 +179,7 @@ async def remove(ctx, arg):
         except:
             if is_debug:
                 raise
-            await ctx.send("An error occured trying to remove that user from the db. Try remove {user id}")
+            await ctx.send(db_error)
     else:
         await ctx.send(admin_error)
 
