@@ -84,13 +84,12 @@ async def on_member_join(member):
             user_number = get_next_number() 
             await member.edit(nick=generate_name(user_number))
             insert_new_user(member.name, member.id, user_number, True)
-
-            print(f"{member.name} was renamed {generate_name(user_number)}")
+            print(f"Welcome {member.name}! User was renamed {generate_name(user_number)}")
         else:
         # Otherwise, give them back their number
             user_number = user[2]
             await member.edit(nick=generate_name(user_number))
-            print(f"{member.name} was renamed {generate_name(user_number)}")
+            print(f"Welcome {member.name}! User was renamed {generate_name(user_number)}")
     except:
         if is_debug:
             raise
