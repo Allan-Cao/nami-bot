@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from ebb import discordToken, commandPrefix, rename_error, sussy_kittens, admin, activity_name, admin_error, db_error, keep_number_on_leave
+from ebb import discordToken, commandPrefix, rename_error, custom_names, admin, activity_name, admin_error, db_error, keep_number_on_leave
 import sqlite3
 connection = sqlite3.connect("userbase.db", isolation_level=None)
 cursor = connection.cursor()
@@ -54,6 +54,13 @@ def update_user(id, param , value):
         )
     else:
         raise ValueError
+
+async def rename_user(member, number):
+    await member.edit(nick=generate_name(number))
+    print(f"{member.name} was renamed {generate_name(number)}")
+    user = select_user(member.id)
+    if user == None:
+        insert_new_user(member.name, member.id, number)
 
 ##################### DISCORD COMMANDS #############################
 @bot.event
@@ -186,40 +193,27 @@ async def remove(ctx, arg):
 )
 async def rename(ctx):
     if ctx.author.id in admin:
-        for sus_kitten in ctx.message.guild.members:
-            if sus_kitten.id in sussy_kittens.keys():
+        for member in ctx.message.guild.members:
+            if member.id in custom_names.keys():
                 try:
-                    kitten_name = sus_kitten.name
-                    kitten_id = sus_kitten.id
-                    kitten_number = sussy_kittens[sus_kitten.id]
-                    await sus_kitten.edit(nick=generate_name(kitten_number))
-                    print(f"By coincidence, {sus_kitten.name} was renamed {generate_name(kitten_number)}")
-                    kitten = select_user(sus_kitten.id)
-                    if kitten == None:
-                        insert_new_user(kitten_name, kitten_id, kitten_number, True)
+                    rename_user(member, custom_names[member.id])
                 except:
                     if is_debug:
                         raise
-                    print(f"{kitten_name} {rename_error}")
-                    await ctx.send(print(f"{kitten_name} {rename_error}"))
+                    print(f"{member.name} {rename_error}")
+                    await ctx.send(print(f"{member.name} {rename_error}"))
             else:
                 try:
-                    current_kitten = select_user(sus_kitten.id)
-                    if current_kitten == None:
-                        kitten_name = sus_kitten.name
-                        kitten_id = sus_kitten.id
-                        kitten_number = get_next_number()
-                        await sus_kitten.edit(nick=generate_name(kitten_number))
-                        insert_new_user(kitten_name, kitten_id, kitten_number, True)
-                        print(f"{sus_kitten.name} was renamed Kitten #{kitten_number}")
+                    current_kitten = select_user(member.id)
+                    if current_kitten != None:
+                        rename_user(member, current_kitten[2])
                     else:
-                        kitten_number = current_kitten[2]
-                        await sus_kitten.edit(nick=generate_name(kitten_number))
+                        rename_user(member, get_next_number())
                 except:
                     if is_debug:
                         raise
-                    print(f"{sus_kitten.name} {rename_error}")
-                    await ctx.send(f"{sus_kitten.name} {rename_error}")
+                    print(f"{member.name} {rename_error}")
+                    await ctx.send(f"{member.name} {rename_error}")
     else:
         await ctx.send(admin_error)
 
