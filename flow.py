@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands
-from ebb import productionToken, sussy_kittens, testToken, admin
+from ebb import discordToken, commandPrefix, rename_error, sussy_kittens, admin, activity_name, admin_error, db_error, keep_number_on_leave
 import sqlite3
 connection = sqlite3.connect("userbase.db", isolation_level=None)
 cursor = connection.cursor()
@@ -8,13 +8,9 @@ cursor = connection.cursor()
 intents = discord.Intents.default()
 intents.members = True
 bot = discord.Client(intents = intents)
-bot = commands.Bot(command_prefix="!", intents=intents)
+bot = commands.Bot(command_prefix=commandPrefix, intents=intents)
 
 is_debug = False
-
-activity_name = "I still hear the song of the sea."
-admin_error = "meow :3"
-db_error = "Database error..."
 
 ##################### UTILITY COMMANDS #############################
 
@@ -22,7 +18,7 @@ def generate_name(n):
     return("Kitten #" + str(n))
 
 def get_next_number():
-    rows = cursor.execute("SELECT kitten_number FROM kitten").fetchall()
+    rows = cursor.execute("SELECT kitten_number FROM userbase").fetchall()
     all_kitten_numbers = [i[0] for i in rows] + list(sussy_kittens.values())
     distinct = {*all_kitten_numbers}
     index = 1
@@ -32,6 +28,32 @@ def get_next_number():
         index += 1
     # btw this is a leetcode hard question lol
     # https://leetcode.com/problems/first-missing-positive/
+
+def select_user(id):
+    return(cursor.execute("SELECT * FROM userbase WHERE id = ?", (id)).fetchone())
+
+def select_all_users(active):
+    return(list(cursor.execute("SELECT * FROM userbase WHERE active == ?", (active)).fetchall()))
+
+def insert_new_user(name, id, user_number, active = True):
+    cursor.execute("INSERT INTO userbase VALUES (?, ?, ?, ?)",
+                (name, id, user_number, active)
+    )
+
+def delete_user(id):
+    cursor.execute(
+        "DELETE FROM userbase WHERE id = ?",
+        (id,)
+    )
+
+def update_user(id, param , value):
+    if param in ["active", "name", "user_number"]:
+        cursor.execute(
+            f"UPDATE userbase SET {param} = ? WHERE id = ?",
+            (value, id)
+        )
+    else:
+        raise ValueError
 
 ##################### DISCORD COMMANDS #############################
 @bot.event
@@ -51,22 +73,18 @@ async def on_member_join(member):
     """
         On member join, first check if the member id is already in the database
         If it is,
-            Give them back their kitten number
+            Give them back their number
         Otherwise,
-            Use the next_kitten_number() to find the next available kitten number
+            Use the get_next_number() to find the next available number
     """
     try:
-        user = cursor.execute("SELECT name, id, kitten_number FROM kitten WHERE id == ?",
-                                (member.id,)).fetchone()
+        user = select_user(member.id)
         if user == None:
         # If member could not be found
-            user_name = member.name
-            user_id = member.id
             user_number = get_next_number() 
             await member.edit(nick=generate_name(user_number))
-            cursor.execute("INSERT INTO kitten VALUES (?, ?, ?, ?)",
-                        (user_name, user_id, user_number, True)
-            )
+            insert_new_user(member.name, member.id, user_number, True)
+
             print(f"{member.name} was renamed {generate_name(user_number)}")
         else:
         # Otherwise, give them back their number
@@ -81,15 +99,17 @@ async def on_member_join(member):
 @bot.event
 async def on_member_remove(member):
     """
-        Since we have an algorithm to deal with newly assigned numbers, people will keep their number!
+        Since we have an algorithm to deal with newly assigned numbers,
+        users will by default keep their number. This behavior can be modified by changing
+        the keep_number_on_leave variable to False in the config.
+        
     """
-    cursor.execute(
-        "UPDATE kitten SET active = ? WHERE id = ?",
-        (False, member.id)
-    )
-    n = cursor.execute("SELECT name, id, kitten_number FROM kitten WHERE id == ?",
-                        (member.id,)).fetchone()
-    print(f"{member.name} has left the server! They were {generate_name(n[2])} and was last named {member.nick}")
+    user = select_user(member.id)
+    if keep_number_on_leave:
+        update_user(member.id, "active", False)
+    else:
+        delete_user(member.id)
+    print(f"{member.name} has left the server! They were {generate_name(user[2])} and was last named {member.nick}")
 
 ##################### DATABASE COMMANDS #############################
 
@@ -101,7 +121,7 @@ async def on_member_remove(member):
 async def createDB(ctx):
     if ctx.author.id in admin:
         try:
-            cursor.execute("CREATE TABLE kitten (name TEXT, id INTEGER, kitten_number INTEGER, active BOOLEAN)")
+            cursor.execute("CREATE TABLE userbase (name TEXT, id INTEGER, kitten_number INTEGER, active BOOLEAN)")
         except:
             if is_debug:
                 raise
@@ -117,13 +137,13 @@ async def createDB(ctx):
 async def list(ctx):
     if ctx.author.id in admin:
         try:
-            inactive = list(cursor.execute("SELECT * FROM kitten WHERE active == false").fetchall())
+            inactive = select_all_users(False)
             embed=discord.Embed(title="Inactive Users")
             for user in inactive:
                 embed.add_field(name=generate_name(user[2]), value=user[1], inline=True)
             await ctx.send(embed=embed)
 
-            active = list(cursor.execute("SELECT * FROM kitten WHERE active == true").fetchall())
+            active = select_all_users(True)
             embed=discord.Embed(title="Active Users")
             for user in active:
                 embed.add_field(name=generate_name(user[2]), value=user[1], inline=True)
@@ -143,20 +163,20 @@ async def list(ctx):
 async def remove(ctx, arg):
     if ctx.author.id in admin:
         try:
-            user_number, is_active = cursor.execute("SELECT kitten_number, active FROM kitten WHERE id == ?",
-                        (arg,)).fetchone()
-            if is_active == False:
-                cursor.execute(
-                    "DELETE FROM kitten WHERE id = ?",
-                    (arg,)
-                )
-                await ctx.send(f"Removed {generate_name(user_number)} from the database!")
+            # should validate the argument first...
+            user = select_user(arg,)
+            if user == None:
+                await ctx.send("Invalid userId given")
+                raise
+            if user[3] == False:
+                delete_user(arg,)
+                await ctx.send(f"Removed {generate_name(user[2])} from the database!")
             else:
                 await ctx.send(f"Unable to remove user {arg} due to them being active!")
         except:
             if is_debug:
                 raise
-            await ctx.send("An error occured trying to remove that user from the db. Try removeDB {user id}")
+            await ctx.send("An error occured trying to remove that user from the db. Try remove {user id}")
     else:
         await ctx.send(admin_error)
 
@@ -173,40 +193,34 @@ async def rename(ctx):
                     kitten_name = sus_kitten.name
                     kitten_id = sus_kitten.id
                     kitten_number = sussy_kittens[sus_kitten.id]
-                    await sus_kitten.edit(nick="Kitten #" + str(kitten_number))
-                    print(f"By coincidence, {sus_kitten.name} was renamed Kitten #{kitten_number}")
-                    kitten = cursor.execute("SELECT name, id, kitten_number FROM kitten WHERE id == ?",
-                                            (sus_kitten.id,)).fetchone()
+                    await sus_kitten.edit(nick=generate_name(kitten_number))
+                    print(f"By coincidence, {sus_kitten.name} was renamed {generate_name(kitten_number)}")
+                    kitten = select_user(sus_kitten.id)
                     if kitten == None:
-                        cursor.execute("INSERT INTO kitten VALUES (?, ?, ?, ?)",
-                                    (kitten_name, kitten_id, kitten_number, True)
-                        )
+                        insert_new_user(kitten_name, kitten_id, kitten_number, True)
                 except:
                     if is_debug:
                         raise
-                    print(f"{kitten_name} could not be renamed!")
-                    await ctx.send(print(f"{kitten_name} could not be renamed!"))
+                    print(f"{kitten_name} {rename_error}")
+                    await ctx.send(print(f"{kitten_name} {rename_error}"))
             else:
                 try:
-                    current_kitten = cursor.execute("SELECT name, id, kitten_number FROM kitten WHERE id == ?",
-                                            (sus_kitten.id,)).fetchone()
+                    current_kitten = select_user(sus_kitten.id)
                     if current_kitten == None:
                         kitten_name = sus_kitten.name
                         kitten_id = sus_kitten.id
                         kitten_number = get_next_number()
-                        await sus_kitten.edit(nick="Kitten #" + str(kitten_number))
-                        cursor.execute("INSERT INTO kitten VALUES (?, ?, ?, ?)",
-                                    (kitten_name, kitten_id, kitten_number, True)
-                        )
+                        await sus_kitten.edit(nick=generate_name(kitten_number))
+                        insert_new_user(kitten_name, kitten_id, kitten_number, True)
                         print(f"{sus_kitten.name} was renamed Kitten #{kitten_number}")
                     else:
                         kitten_number = current_kitten[2]
-                        await sus_kitten.edit(nick="Kitten #" + str(kitten_number))
+                        await sus_kitten.edit(nick=generate_name(kitten_number))
                 except:
                     if is_debug:
                         raise
-                    print(f"{sus_kitten.name} was unable to be renamed!")
-                    await ctx.send(f"{sus_kitten.name} was unable to be renamed!")
+                    print(f"{sus_kitten.name} {rename_error}")
+                    await ctx.send(f"{sus_kitten.name} {rename_error}")
     else:
         await ctx.send(admin_error)
 
@@ -216,18 +230,18 @@ async def rename(ctx):
     pass_context=True,
 )
 async def reset(ctx):
-    if ctx.author.id == 645940845245104130:
+    if ctx.author.id in admin:
         for member in ctx.message.guild.members:
             try:
                 await member.edit(nick=member.name)
             except:
                 if is_debug:
                     raise
-                print(f"{member.name}'s nickname could not be reset.")
-                await ctx.send(f"{member.name}'s nickname could not be reset.")
+                print(f"{member.name} {rename_error}")
+                await ctx.send(f"{member.name} {rename_error}")
     else:
         await ctx.send(admin_error)
 
 ###################### END KITTEN COMMANDS #############################
 
-bot.run(testToken)
+bot.run(discordToken)
