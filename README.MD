@@ -1,12 +1,9 @@
-
 # Nami Bot
 
 A revolutionary way to batch rename your server!
 
 Have you ever wanted to batch manage the names of everyone on your discord server?
 Well dream no more, Nami bot is here to make give everyone on your server a unique number!
-
-
 
 
 ## Features
