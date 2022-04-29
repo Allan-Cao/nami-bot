@@ -1,4 +1,4 @@
-![Nami-bot](Nami-bot.png)
+![Nami-bot](https://github.com/Allan-Cao/nami-bot/raw/main/Nami-Bot.png)
 
 # 🤖 A revolutionary way to batch rename your server!
 
